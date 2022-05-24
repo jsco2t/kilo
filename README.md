@@ -19,3 +19,8 @@ implementations I have studied in writing my own version of the editor:
 > One important note: _antirez's_ original editor had a goal of being functional **AND** under 1k lines. That's not 
 > my goal. For me this is a learning opportunity. Not only to learn more about low-level console handling but also 
 > to learn how the same objectives are accomplished in multiple languages. 
+
+## License
+
+This project, as stated above, was started as a learning exercise. The code found in this repository is free for 
+anyone else to make use of. For more information see the [license](./LICENSE) file in this repository.
