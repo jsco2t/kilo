@@ -7,9 +7,9 @@
 
 struct termios orig_term;
 
-/* ------------------------------------------
-Terminal Handling
------------------------------------------- */
+// -----------------------------------------
+// Terminal Handling
+// -----------------------------------------
 
 void exitOnFailure(const char *message) {
     perror(message);
@@ -38,9 +38,9 @@ void enableRawMode() {
     if (tcsetattr(STDIN_FILENO, TCSAFLUSH, &term) != 0) { exitOnFailure("tcsetattr"); }
 }
 
-/* ------------------------------------------
-Entrypoint
------------------------------------------- */
+// -----------------------------------------
+// Entrypoint
+// -----------------------------------------
 int main() {
     enableRawMode();
 
