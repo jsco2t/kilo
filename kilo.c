@@ -5,6 +5,14 @@
 #include <unistd.h>
 #include <stdlib.h>
 
+// -----------------------------------------
+// Macros
+// -----------------------------------------
+#define CTRL_KEY(k) ((k) & 0x1f)
+
+// -----------------------------------------
+// Data
+// -----------------------------------------
 struct termios orig_term;
 
 // -----------------------------------------
@@ -38,6 +46,55 @@ void enableRawMode() {
     if (tcsetattr(STDIN_FILENO, TCSAFLUSH, &term) != 0) { exitOnFailure("tcsetattr"); }
 }
 
+char editorReadKey() {
+    ssize_t nread;
+    char c;
+
+    while ((nread = read(STDIN_FILENO, &c, 1)) != 1) {
+        if (nread == -1 && errno != EAGAIN) { exitOnFailure("read"); }
+    }
+
+    return c;
+}
+
+// -----------------------------------------
+// Input Handling
+// -----------------------------------------
+
+void editorProcessKeypress() {
+    char c = editorReadKey();
+
+    switch (c) {
+        case CTRL_KEY('q'):
+            exit(0);
+            break;
+    }
+}
+
+// -----------------------------------------
+// Output Handling
+//
+// Uses https://en.wikipedia.org/wiki/VT100
+// escape sequences. Code will only work
+// with terminal emulators which support
+// VT100.
+//
+// To support a wider set of displays
+// the `ncurses` library could be used.
+// -----------------------------------------
+
+void editorRefreshScreen() {
+    // `\x1b` is a console escape character, it's always followed by `[`. The `J` means clear the screen.
+    // The `J` command (following the escape sequence) is controlled by the number before it:
+    //  - `0J` means: Clear the screen from the cursor to the end
+    //  - `1J` means: Clear the screen from the start of the screen to the cursor
+    //  - `2J` means: Clear the entire screen
+    write(STDOUT_FILENO, "\x1b[2J", 4);
+
+    // reposition cursor to top of the screen:
+    write(STDOUT_FILENO, "\x1b[H", 3); // `H` escape sequence
+}
+
 // -----------------------------------------
 // Entrypoint
 // -----------------------------------------
@@ -45,16 +102,8 @@ int main() {
     enableRawMode();
 
     while (1) {
-        char c = '\0';
-        if (read(STDIN_FILENO, &c, 1) == -1 && errno != EAGAIN) { exitOnFailure("read"); } // per doc `-1` is the error return value
-
-        if (iscntrl(c)) {
-            printf("%d\r\n", c);
-        } else {
-            printf("%d ('%c')\r\n", c, c); // since `output flag` of `OPOST` is disabled, we have to manually return CR LF, instead of just LF
-        }
-
-        if (c == 'q') break;
+        editorRefreshScreen();
+        editorProcessKeypress();
     }
 
     return 0;

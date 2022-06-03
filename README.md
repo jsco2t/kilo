@@ -1,4 +1,4 @@
-# kilo editor
+# kilo2
 
 A small console based text editor written in `C`. Inspired by the original `kilo` editor by _antirez_.
 
@@ -8,7 +8,7 @@ The `kilo editor` was first written as a _just for fun_ project by '[antirez](ht
 goal of the project was to write a console text editor in 1000k lines of code. _antirez's_ posting of the original 
 `kilo` editor has prompted many people to attempt to replicate the challenge in their language of choice.
 
-This editor, _my kilo editor_, uses multiple examples online as learning examples. The following were the 
+This editor, my _kilo2 editor_, uses multiple examples online as learning examples. The following were the 
 implementations I have studied in writing my own version of the editor:
 
 - _antirez's_ original: http://antirez.com/news/108

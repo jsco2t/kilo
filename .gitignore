@@ -57,3 +57,6 @@ cmake-build-debug/*
 
 # Project
 kilo
+
+# macos
+.DS_Store

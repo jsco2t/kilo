@@ -1,13 +1,15 @@
 out_binaries=kilo
 
-all: clean kilo.c
-	$(CC) kilo.c -o $(out_binaries) -Wall -Wextra -pedantic -std=c99
+all: clean build
 
-kilo: kilo.c
-	$(CC) kilo.c -o $(out_binaries) -Wall -Wextra -pedantic -std=c99
+build: kilo.c
+	$(CC) kilo.c -g -o $(out_binaries) -Wall -Wextra -pedantic -std=c99
+
+kilo: build
 
 clean:
 	rm -f $(out_binaries)
+	rm -f -r "$(out_binaries).dSYM"
 
 run: all
 	./$(out_binaries)
