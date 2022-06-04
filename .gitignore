@@ -55,6 +55,9 @@ dkms.conf
 cmake-build-debug/*
 .idea/*
 
+# vscode
+.vscode/*.log
+
 # Project
 kilo
 
