@@ -1,4 +1,4 @@
-#include <asm-generic/ioctls.h>
+//#include <asm-generic/ioctls.h>
 #include <ctype.h>
 #include <errno.h>
 #include <stdio.h>
@@ -111,6 +111,8 @@ int getWindowSize(int *rows, int *cols) {
         if (write(STDOUT_FILENO, "\x1b[999C\x1b[999B", 12) != 12) {
             return -1;
         }
+
+        // if we could move the cursor - then use the cursor position to determine the rows/cols
         return getCursorPosition(rows, cols);
     } else {
         *cols = ws.ws_col;
