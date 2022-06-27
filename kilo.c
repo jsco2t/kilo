@@ -5,6 +5,7 @@
 #include <termios.h>
 #include <unistd.h>
 #include <stdlib.h>
+#include <string.h>
 #include <sys/ioctl.h>
 
 // -----------------------------------------
@@ -105,8 +106,9 @@ int getWindowSize(int *rows, int *cols) {
     if (ioctl(STDOUT_FILENO, TIOCGWINSZ, &ws) == -1 || ws.ws_col == 0) {
         // fallback solution if `ioctl` read fails
 
-        // Escape sequence + C command = move cursor to the right
+        // Escape sequence + C command = move cursor forward - or to the right
         // Escape sequence + B command = move cursor down
+        // Escape sequence C and B are documented to stop at edge/end of screen
         // 999 is an arbitrarily large value - goal is to move the cursor to the bottom/right corner of the screen
         if (write(STDOUT_FILENO, "\x1b[999C\x1b[999B", 12) != 12) {
             return -1;
@@ -114,7 +116,7 @@ int getWindowSize(int *rows, int *cols) {
 
         // if we could move the cursor - then use the cursor position to determine the rows/cols
         return getCursorPosition(rows, cols);
-    } else {
+    } else { // getting TIOCGWINSZ succeeded
         *cols = ws.ws_col;
         *rows = ws.ws_row;
         return 0;
@@ -122,16 +124,42 @@ int getWindowSize(int *rows, int *cols) {
 }
 
 // -----------------------------------------
+// Buffers
+// -----------------------------------------
+struct strBuffer {
+    char *b;
+    int len;
+};
+
+#define STRBUFFER_INIT {NULL, 0};
+
+void sbAppend(struct strBuffer *strBuf, const char *s, int len) {
+    // create new or resize existing buffer - content of updated buffer will start with value(s) from pointer
+    char *newBuf = realloc(strBuf->b, strBuf->len + len);
+
+    // memory allocation failure?
+    if (newBuf == NULL) {
+        return;
+    }
+
+    // copy new buffer content starting at end of prior buffer content
+    memcpy(&newBuf[strBuf->len], s, len);
+    strBuf->b = newBuf; // set new buffer to be result buffer
+    strBuf->len += len; // make sure buffer length is correct
+}
+
+void sbFree(struct strBuffer *strBuf) {
+    free(strBuf->b);
+}
+// -----------------------------------------
 // Input Handling
 // -----------------------------------------
 void editorProcessKeypress() {
     char c = editorReadKey();
 
-    switch (c) {
-        case CTRL_KEY('q'):
-            clearScreen();
-            exit(0);
-            break;
+    if (c == CTRL_KEY('q')) {
+        clearScreen();
+        exit(0);
     }
 }
 
@@ -146,17 +174,42 @@ void editorProcessKeypress() {
 // To support a wider set of displays
 // the `ncurses` library could be used.
 // -----------------------------------------
-void clearScreen() {
-    write(STDOUT_FILENO, "\x1b[2J", 4);
-    write(STDOUT_FILENO, "\x1b[H", 3);
+void editorWriteStrBuffer(struct strBuffer *strBuf) {
+    write(STDOUT_FILENO, strBuf->b, strBuf->len);
 }
 
-void editorDrawRows() {
-    int y;
+void editorClearScreen(struct strBuffer *strBuf) {
+    sbAppend(strBuf, "\x1b[2J", 4);
+    sbAppend(strBuf, "\x1b[H", 3);
+}
 
-    for (y = 0; y < E.screenRows; y++) {
-        write(STDOUT_FILENO, "~\r\n", 3);
+void clearScreen() {
+    struct strBuffer strBuf = STRBUFFER_INIT;
+    editorClearScreen(&strBuf);
+    editorWriteStrBuffer(&strBuf);
+    sbFree(&strBuf);
+}
+
+void editorDrawRows(struct strBuffer *strBuf) {
+    for (int y = 0; y < E.screenRows; y++) {
+        sbAppend(strBuf, "~", 1);
+
+        if (y < E.screenRows - 1) {
+            sbAppend(strBuf, "\r\n", 2);
+        }
     }
+}
+
+void editorResetCursorToHome(struct strBuffer *strBuf) {
+    sbAppend(strBuf, "\x1b[H", 3); // reposition cursor to top of the screen
+}
+
+void editorHideCursor(struct strBuffer *strBuf) {
+    sbAppend(strBuf, "\x1b[?25l", 6);
+}
+
+void editorShowCursor(struct strBuffer *strBuf) {
+    sbAppend(strBuf, "\x1b[?25h", 6);
 }
 
 void editorRefreshScreen() {
@@ -165,14 +218,18 @@ void editorRefreshScreen() {
     //  - `0J` means: Clear the screen from the cursor to the end
     //  - `1J` means: Clear the screen from the start of the screen to the cursor
     //  - `2J` means: Clear the entire screen
-    //write(STDOUT_FILENO, "\x1b[2J", 4);
+    // Reposition cursor to top of the screen.
+    struct strBuffer strBuf = STRBUFFER_INIT;
 
-    // reposition cursor to top of the screen:
-    //write(STDOUT_FILENO, "\x1b[H", 3); // `H` escape sequence
+    editorHideCursor(&strBuf);
+    editorClearScreen(&strBuf);
+    editorDrawRows(&strBuf);
+    editorResetCursorToHome(&strBuf);
+    editorShowCursor(&strBuf);
+    editorWriteStrBuffer(&strBuf);
+    sbFree(&strBuf);
 
-    clearScreen();
-    editorDrawRows();
-    write(STDOUT_FILENO, "\x1b[H", 3);
+    // @ https://viewsourcecode.org/snaptoken/kilo/03.rawInputAndOutput.html#clear-lines-one-at-a-time
 }
 
 // -----------------------------------------
