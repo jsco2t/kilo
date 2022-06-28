@@ -179,8 +179,9 @@ void editorWriteStrBuffer(struct strBuffer *strBuf) {
 }
 
 void editorClearScreen(struct strBuffer *strBuf) {
-    sbAppend(strBuf, "\x1b[2J", 4);
-    sbAppend(strBuf, "\x1b[H", 3);
+    // <esc>[2J = clear whole display, `1J` = clear from start to cursor, `0J` = clear from cursor to end
+    sbAppend(strBuf, "\x1b[2J", 4); // erase in display escape sequence: http://vt100.net/docs/vt100-ug/chapter3.html#ED
+    sbAppend(strBuf, "\x1b[H", 3); // cursor position escape sequence, default top;right: http://vt100.net/docs/vt100-ug/chapter3.html#CUP
 }
 
 void clearScreen() {
@@ -194,6 +195,9 @@ void editorDrawRows(struct strBuffer *strBuf) {
     for (int y = 0; y < E.screenRows; y++) {
         sbAppend(strBuf, "~", 1);
 
+        // 0K (default) erase line to right of cursor, 1K erase line to left of cursor, 2K erase whole line
+        sbAppend(strBuf, "\x1b[K", 3); // erase in line escape sequence: http://vt100.net/docs/vt100-ug/chapter3.html#EL
+
         if (y < E.screenRows - 1) {
             sbAppend(strBuf, "\r\n", 2);
         }
@@ -201,28 +205,22 @@ void editorDrawRows(struct strBuffer *strBuf) {
 }
 
 void editorResetCursorToHome(struct strBuffer *strBuf) {
-    sbAppend(strBuf, "\x1b[H", 3); // reposition cursor to top of the screen
+    sbAppend(strBuf, "\x1b[H", 3); // cursor position escape sequence, default top;right: http://vt100.net/docs/vt100-ug/chapter3.html#CUP
 }
 
 void editorHideCursor(struct strBuffer *strBuf) {
-    sbAppend(strBuf, "\x1b[?25l", 6);
+    sbAppend(strBuf, "\x1b[?25l", 6); // hide cursor escape sequence: https://vt100.net/docs/vt510-rm/DECTCEM.html
 }
 
 void editorShowCursor(struct strBuffer *strBuf) {
-    sbAppend(strBuf, "\x1b[?25h", 6);
+    sbAppend(strBuf, "\x1b[?25h", 6); // show cursor escape sequence: https://vt100.net/docs/vt510-rm/DECTCEM.html
 }
 
 void editorRefreshScreen() {
-    // `\x1b` is a console escape character, it's always followed by `[`. The `J` means clear the screen.
-    // The `J` command (following the escape sequence) is controlled by the number before it:
-    //  - `0J` means: Clear the screen from the cursor to the end
-    //  - `1J` means: Clear the screen from the start of the screen to the cursor
-    //  - `2J` means: Clear the entire screen
-    // Reposition cursor to top of the screen.
     struct strBuffer strBuf = STRBUFFER_INIT;
 
     editorHideCursor(&strBuf);
-    editorClearScreen(&strBuf);
+    //editorClearScreen(&strBuf);
     editorDrawRows(&strBuf);
     editorResetCursorToHome(&strBuf);
     editorShowCursor(&strBuf);
