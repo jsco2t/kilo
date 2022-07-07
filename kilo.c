@@ -9,8 +9,9 @@
 #include <sys/ioctl.h>
 
 // -----------------------------------------
-// Macros and Header/Func Signatures
+// Defines and Header/Func Signatures
 // -----------------------------------------
+#define KILO2_VERSION "0.0.1"
 #define CTRL_KEY(k) ((k) & 0x1f)
 void clearScreen(); // implemented in console handling code below
 
@@ -18,6 +19,8 @@ void clearScreen(); // implemented in console handling code below
 // Data
 // -----------------------------------------
 struct editorConfig {
+    int curX; // horizontal
+    int curY; // vertical
     int screenRows;
     int screenCols;
     struct termios orig_term;
@@ -56,12 +59,45 @@ void enableRawMode() {
     if (tcsetattr(STDIN_FILENO, TCSAFLUSH, &term) != 0) { exitOnFailure("tcsetattr"); }
 }
 
+char editorTranslateEscapeSequence() {
+    char seq[3];
+    char defaultResult = '\x1b';
+
+    if (read(STDIN_FILENO, &seq[0], 1) != 1) {
+        return defaultResult;
+    }
+
+    if (read(STDIN_FILENO, &seq[1], 1) != 1) {
+        return defaultResult;
+    }
+
+    // key presses for an arrow key are sent as an escape sequence:
+    //  \x1b[A == UP ARROW
+    //  \x1b[B == DOWN ARROW
+    //  \x1b[C == RIGHT ARROW
+    //  \x1b[D == LEFT ARROW
+    if (seq[0] == '[') {
+        switch (seq[1]) {
+            case 'A': return 'w';
+            case 'B': return 's';
+            case 'C': return 'd';
+            case 'D': return 'a';
+        }
+    }
+
+    return defaultResult;
+}
+
 char editorReadKey() {
     ssize_t nread;
     char c;
 
     while ((nread = read(STDIN_FILENO, &c, 1)) != 1) {
         if (nread == -1 && errno != EAGAIN) { exitOnFailure("read"); }
+    }
+
+    if (c == '\x1b') {
+        c = editorTranslateEscapeSequence();
     }
 
     return c;
@@ -154,12 +190,37 @@ void sbFree(struct strBuffer *strBuf) {
 // -----------------------------------------
 // Input Handling
 // -----------------------------------------
+void editorMoveCursor(char key) {
+    switch (key) {
+        case 'a': // left
+            E.curX--;
+            break;
+
+        case 'd': // right
+            E.curX++;
+            break;
+
+        case 'w': // up
+            E.curY--;
+            break;
+
+        case 's': // down
+            E.curY++;
+            break;
+    }
+}
+
 void editorProcessKeypress() {
     char c = editorReadKey();
 
     if (c == CTRL_KEY('q')) {
         clearScreen();
         exit(0);
+    } else if (c == 'w'
+            || c == 'a'
+            || c == 's'
+            || c == 'd') {
+        editorMoveCursor(c);
     }
 }
 
@@ -191,11 +252,39 @@ void clearScreen() {
     sbFree(&strBuf);
 }
 
+void editorWriteWelcome(struct strBuffer *strBuf){
+    char welcome[80];
+    int welcomeLen = snprintf(welcome, sizeof(welcome), "## kilo2 -- version %s ##", KILO2_VERSION);
+
+    if (welcomeLen > E.screenCols) {
+        welcomeLen = E.screenCols;
+    }
+
+    int padding = (E.screenCols - welcomeLen) / 2;
+    if (padding && padding > 0) {
+        sbAppend(strBuf, "~", 1);
+        padding--;
+    }
+
+    if (padding > 0) {
+        while (padding--) {
+            sbAppend(strBuf, " ", 1);
+        }
+    }
+
+    sbAppend(strBuf, welcome, welcomeLen);
+}
+
 void editorDrawRows(struct strBuffer *strBuf) {
     for (int y = 0; y < E.screenRows; y++) {
-        sbAppend(strBuf, "~", 1);
 
-        // 0K (default) erase line to right of cursor, 1K erase line to left of cursor, 2K erase whole line
+        if (y == E.screenRows / 3) {
+            editorWriteWelcome(strBuf);
+        } else {
+            sbAppend(strBuf, "~", 1);
+        }
+
+        // <esc>[0K (default) erase line to right of cursor, `1K` erase line to left of cursor, `2K` erase whole line
         sbAppend(strBuf, "\x1b[K", 3); // erase in line escape sequence: http://vt100.net/docs/vt100-ug/chapter3.html#EL
 
         if (y < E.screenRows - 1) {
@@ -205,7 +294,10 @@ void editorDrawRows(struct strBuffer *strBuf) {
 }
 
 void editorResetCursorToHome(struct strBuffer *strBuf) {
-    sbAppend(strBuf, "\x1b[H", 3); // cursor position escape sequence, default top;right: http://vt100.net/docs/vt100-ug/chapter3.html#CUP
+    //sbAppend(strBuf, "\x1b[H", 3); // cursor position escape sequence, default top;right: http://vt100.net/docs/vt100-ug/chapter3.html#CUP
+    char buffer[32];
+    snprintf(buffer, sizeof(buffer), "\x1b[%d;%dH", E.curY + 1, E.curX + 1);
+    sbAppend(strBuf, buffer, strlen(buffer));
 }
 
 void editorHideCursor(struct strBuffer *strBuf) {
@@ -234,6 +326,9 @@ void editorRefreshScreen() {
 // Entrypoint
 // -----------------------------------------
 void initEditor() {
+    E.curX = 0;
+    E.curY = 0;
+
     if (getWindowSize(&E.screenRows, &E.screenCols) == -1) {
         exitOnFailure("getWindowSize");
     }
