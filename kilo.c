@@ -15,6 +15,11 @@
 #define CTRL_KEY(k) ((k) & 0x1f)
 void clearScreen(); // implemented in console handling code below
 
+typedef struct erow {
+    int size;
+    char *chars;
+} erow;
+
 // -----------------------------------------
 // Data
 // -----------------------------------------
@@ -23,6 +28,8 @@ struct editorConfig {
     int curY; // vertical
     int screenRows;
     int screenCols;
+    int numRows;
+    erow row;
     struct termios orig_term;
 };
 
@@ -236,6 +243,7 @@ void sbAppend(struct strBuffer *strBuf, const char *s, int len) {
 void sbFree(struct strBuffer *strBuf) {
     free(strBuf->b);
 }
+
 // -----------------------------------------
 // Input Handling
 // -----------------------------------------
@@ -365,15 +373,19 @@ void editorWriteWelcome(struct strBuffer *strBuf){
 void editorDrawRows(struct strBuffer *strBuf) {
     for (int y = 0; y < E.screenRows; y++) {
 
-        if (y == E.screenRows / 3) {
-            editorWriteWelcome(strBuf);
+        if (y >= E.numRows) {
+            if (y == E.screenRows / 3) {
+                editorWriteWelcome(strBuf);
+            } else {
+                sbAppend(strBuf, "~", 1);
+            }
         } else {
-            sbAppend(strBuf, "~", 1);
+            sbAppend(strBuf, E.row.chars, E.row.size > E.screenCols ? E.screenCols : E.row.size);
         }
+
 
         // <esc>[0K or <esc>[K (default) erase line to right of cursor, `1K` erase line to left of cursor, `2K` erase whole line
         sbAppend(strBuf, "\x1b[K", 3); // erase in line escape sequence: http://vt100.net/docs/vt100-ug/chapter3.html#EL
-
         if (y < E.screenRows - 1) {
             sbAppend(strBuf, "\r\n", 2);
         }
@@ -415,11 +427,26 @@ void editorRefreshScreen() {
 }
 
 // -----------------------------------------
+// File I/O Handling
+// -----------------------------------------
+void editorOpen() {
+    char *line = "Hello, world!";
+    int linelen = 13;
+
+    E.row.size = linelen;
+    E.row.chars = malloc(linelen + 1);
+    memcpy(E.row.chars, line, linelen);
+    E.row.chars[linelen] = '\0';
+    E.numRows = 1;
+}
+
+// -----------------------------------------
 // Entrypoint
 // -----------------------------------------
 void initEditor() {
     E.curX = 0;
     E.curY = 0;
+    E.numRows = 0;
 
     if (getWindowSize(&E.screenRows, &E.screenCols) == -1) {
         exitOnFailure("getWindowSize");
@@ -429,6 +456,7 @@ void initEditor() {
 int main() {
     enableRawMode();
     initEditor();
+    editorOpen();
 
     while (1) {
         editorRefreshScreen();
