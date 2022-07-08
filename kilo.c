@@ -28,6 +28,18 @@ struct editorConfig {
 
 struct editorConfig E;
 
+enum editorSpecialKey {
+    ARROW_LEFT = 1000, // picking a value that's outside the character range this editor supports
+    ARROW_RIGHT,
+    ARROW_UP,
+    ARROW_DOWN,
+    DEL_KEY,
+    HOME_KEY,
+    END_KEY,
+    PAGE_UP,
+    PAGE_DOWN
+};
+
 // -----------------------------------------
 // Terminal Handling
 // -----------------------------------------
@@ -59,7 +71,7 @@ void enableRawMode() {
     if (tcsetattr(STDIN_FILENO, TCSAFLUSH, &term) != 0) { exitOnFailure("tcsetattr"); }
 }
 
-char editorTranslateEscapeSequence() {
+int editorTranslateEscapeSequence() {
     char seq[3];
     char defaultResult = '\x1b';
 
@@ -71,24 +83,61 @@ char editorTranslateEscapeSequence() {
         return defaultResult;
     }
 
-    // key presses for an arrow key are sent as an escape sequence:
+    // key presses for movement keys are sent as an escape sequence:
     //  \x1b[A == UP ARROW
     //  \x1b[B == DOWN ARROW
     //  \x1b[C == RIGHT ARROW
     //  \x1b[D == LEFT ARROW
+    //  \x1b[5~ == PAGE UP
+    //  \x1b[6~ == PAGE DOWN
+    //  \x1b[1~ == HOME
+    //  \x1b[7~ == HOME
+    //  \x1b[H == HOME
+    //  \x1b[OH == HOME
+    //  \x1b[4~ == END
+    //  \x1b[8~ == END
+    //  \x1b[F == END
+    //  \x1b[OF == END
+    //  \x1b[3~ == DEL
     if (seq[0] == '[') {
+        //printf("Key: %c", seq[1]);
+        if (seq[1] >= '0' && seq[1] <= '9') {
+            if (read(STDIN_FILENO, &seq[2], 1) != 1) {
+                return defaultResult;
+            }
+
+            if (seq[2] == '~') {
+                switch (seq[1]) {
+                    case '1': return HOME_KEY;
+                    case '3': return DEL_KEY;
+                    case '4': return END_KEY;
+                    case '5': return PAGE_UP;
+                    case '6': return PAGE_DOWN;
+                    case '7': return HOME_KEY;
+                    case '8': return END_KEY;
+                }
+            }
+        } else {
+            switch (seq[1]) {
+                case 'A': return ARROW_UP;
+                case 'B': return ARROW_DOWN;
+                case 'C': return ARROW_RIGHT;
+                case 'D': return ARROW_LEFT;
+                case 'H': return HOME_KEY;
+                case 'F': return END_KEY;
+            }
+        }
+    } else if (seq[0] == 'O') {
         switch (seq[1]) {
-            case 'A': return 'w';
-            case 'B': return 's';
-            case 'C': return 'd';
-            case 'D': return 'a';
+            case 'H': return HOME_KEY;
+            case 'F': return END_KEY;
         }
     }
 
     return defaultResult;
 }
 
-char editorReadKey() {
+int editorReadKey() {
     ssize_t nread;
     char c;
 
@@ -97,7 +146,7 @@ char editorReadKey() {
     }
 
     if (c == '\x1b') {
-        c = editorTranslateEscapeSequence();
+        return editorTranslateEscapeSequence();
     }
 
     return c;
@@ -190,36 +239,74 @@ void sbFree(struct strBuffer *strBuf) {
 // -----------------------------------------
 // Input Handling
 // -----------------------------------------
-void editorMoveCursor(char key) {
+void editorMoveCursor(int key) {
     switch (key) {
-        case 'a': // left
-            E.curX--;
+        case ARROW_LEFT:
+            if (E.curX > 0){
+                E.curX--;
+            }
             break;
 
-        case 'd': // right
-            E.curX++;
+        case ARROW_RIGHT:
+            if (E.curX < E.screenCols) {
+                E.curX++;
+            }
             break;
 
-        case 'w': // up
-            E.curY--;
+        case ARROW_UP:
+            if (E.curY > 0) {
+                E.curY--;
+            }
             break;
 
-        case 's': // down
-            E.curY++;
+        case ARROW_DOWN:
+            if (E.curY < E.screenRows) {
+                E.curY++;
+            }
             break;
+
+        case HOME_KEY:
+            E.curX = 0;
+            break;
+
+        case END_KEY:
+            E.curX = E.screenCols - 1;
+            break;
+
+        case PAGE_UP:
+            E.curY = 0;
+            break;
+
+        case PAGE_DOWN:
+            E.curY = E.screenRows - 1;
+            break;
+
+//        case PAGE_UP:
+//        case PAGE_DOWN:
+//            {
+//                int rows = E.screenRows;
+//                while (rows--) {
+//                    editorMoveCursor(key == PAGE_UP ? ARROW_UP : ARROW_DOWN);
+//                }
+//            }
+//            break;
     }
 }
 
 void editorProcessKeypress() {
-    char c = editorReadKey();
+    int c = editorReadKey();
 
     if (c == CTRL_KEY('q')) {
         clearScreen();
         exit(0);
-    } else if (c == 'w'
-            || c == 'a'
-            || c == 's'
-            || c == 'd') {
+    } else if (c == ARROW_UP
+            || c == ARROW_DOWN
+            || c == ARROW_LEFT
+            || c == ARROW_RIGHT
+            || c == PAGE_UP
+            || c == PAGE_DOWN
+            || c == HOME_KEY
+            || c == END_KEY) {
         editorMoveCursor(c);
     }
 }
@@ -284,7 +371,7 @@ void editorDrawRows(struct strBuffer *strBuf) {
             sbAppend(strBuf, "~", 1);
         }
 
-        // <esc>[0K (default) erase line to right of cursor, `1K` erase line to left of cursor, `2K` erase whole line
+        // <esc>[0K or <esc>[K (default) erase line to right of cursor, `1K` erase line to left of cursor, `2K` erase whole line
         sbAppend(strBuf, "\x1b[K", 3); // erase in line escape sequence: http://vt100.net/docs/vt100-ug/chapter3.html#EL
 
         if (y < E.screenRows - 1) {
@@ -294,6 +381,10 @@ void editorDrawRows(struct strBuffer *strBuf) {
 }
 
 void editorResetCursorToHome(struct strBuffer *strBuf) {
+    sbAppend(strBuf, "\x1b[H", 3);
+}
+
+void editorSetCursorPosition(struct strBuffer *strBuf) {
     //sbAppend(strBuf, "\x1b[H", 3); // cursor position escape sequence, default top;right: http://vt100.net/docs/vt100-ug/chapter3.html#CUP
     char buffer[32];
     snprintf(buffer, sizeof(buffer), "\x1b[%d;%dH", E.curY + 1, E.curX + 1);
@@ -312,9 +403,10 @@ void editorRefreshScreen() {
     struct strBuffer strBuf = STRBUFFER_INIT;
 
     editorHideCursor(&strBuf);
+    editorResetCursorToHome(&strBuf);
     //editorClearScreen(&strBuf);
     editorDrawRows(&strBuf);
-    editorResetCursorToHome(&strBuf);
+    editorSetCursorPosition(&strBuf);
     editorShowCursor(&strBuf);
     editorWriteStrBuffer(&strBuf);
     sbFree(&strBuf);
